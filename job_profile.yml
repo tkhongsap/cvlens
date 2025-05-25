@@ -1,0 +1,66 @@
+# Job Profile Configuration for CVLens-Agent
+# This file defines the criteria for scoring candidates
+
+job_title: "Senior Software Engineer"
+department: "Engineering"
+
+# Scoring weights (must sum to 100)
+weights:
+  skills: 60
+  education: 20
+  experience: 20
+
+# Required and preferred skills
+skills:
+  required:
+    - python
+    - javascript
+    - react
+    - node.js
+    - sql
+    - git
+  preferred:
+    - typescript
+    - docker
+    - kubernetes
+    - aws
+    - ci/cd
+    - agile
+  nice_to_have:
+    - machine learning
+    - data science
+    - graphql
+
+# Education requirements
+education:
+  required:
+    - "bachelor's degree"
+    - "computer science"
+  preferred:
+    - "master's degree"
+    - "software engineering"
+  equivalent_experience_years: 4
+
+# Experience requirements
+experience:
+  minimum_years: 5
+  preferred_years: 7
+  required_domains:
+    - "web development"
+    - "full stack"
+  preferred_domains:
+    - "microservices"
+    - "cloud architecture"
+    - "team leadership"
+
+# Keywords that indicate strong candidates
+keywords:
+  high_value:
+    - "team lead"
+    - "architect"
+    - "senior"
+    - "principal"
+  negative:
+    - "entry level"
+    - "intern"
+    - "junior" 

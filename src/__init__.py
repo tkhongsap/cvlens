@@ -1,0 +1,1 @@
+# CVLens-Agent - Local desktop application for resume screening 

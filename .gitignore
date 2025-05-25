@@ -108,6 +108,14 @@ public
 
 # Python
 # ===========================================
+# CVLens-Agent specific
+.env
+data/
+logs/
+*.log
+settings.json
+.streamlit/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
