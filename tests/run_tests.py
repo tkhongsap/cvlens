@@ -4,6 +4,7 @@
 import sys
 import os
 import argparse
+import subprocess
 from pathlib import Path
 
 # Add project root to path for imports
@@ -11,83 +12,167 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
-def run_environment_tests(comprehensive=False):
-    """Run environment tests."""
-    print("🔧 Running Environment Tests")
+def run_unit_tests(verbose=False):
+    """Run unit tests."""
+    print("🔧 Running Unit Tests")
     print("=" * 60)
     
-    if comprehensive:
-        from tests.test_environment import TestEnvironmentInteractive
-        interactive_test = TestEnvironmentInteractive()
-        return interactive_test.run_comprehensive_test()
-    else:
-        import unittest
-        from tests.test_environment import TestEnvironmentSetup
+    try:
+        cmd = [sys.executable, "-m", "pytest", "tests/unit/", "-v" if verbose else "-q"]
+        result = subprocess.run(cmd, cwd=project_root, capture_output=True, text=True)
         
-        suite = unittest.TestLoader().loadTestsFromTestCase(TestEnvironmentSetup)
-        runner = unittest.TextTestRunner(verbosity=2)
-        result = runner.run(suite)
-        return result.wasSuccessful()
+        if result.returncode == 0:
+            print("✅ Unit tests passed")
+            if verbose:
+                print(result.stdout)
+            return True
+        else:
+            print("❌ Unit tests failed")
+            print(result.stdout)
+            print(result.stderr)
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error running unit tests: {str(e)}")
+        return False
 
 
-def run_app_tests(comprehensive=False):
-    """Run application component tests."""
-    print("📱 Running Application Component Tests")
+def run_integration_tests(verbose=False, auth_required=False):
+    """Run integration tests."""
+    print("🌐 Running Integration Tests")
     print("=" * 60)
     
-    if comprehensive:
-        from tests.test_app import TestApplicationInteractive
-        interactive_test = TestApplicationInteractive()
-        return interactive_test.run_comprehensive_test()
-    else:
-        import unittest
-        from tests.test_app import TestApplicationComponents
+    try:
+        cmd = [sys.executable, "-m", "pytest", "tests/integration/", "-v" if verbose else "-q"]
+        if auth_required:
+            cmd.append("--auth-required")
+            
+        result = subprocess.run(cmd, cwd=project_root, capture_output=True, text=True)
         
-        suite = unittest.TestLoader().loadTestsFromTestCase(TestApplicationComponents)
-        runner = unittest.TextTestRunner(verbosity=2)
-        result = runner.run(suite)
-        return result.wasSuccessful()
+        if result.returncode == 0:
+            print("✅ Integration tests passed")
+            if verbose:
+                print(result.stdout)
+            return True
+        else:
+            print("❌ Integration tests failed")
+            print(result.stdout)
+            print(result.stderr)
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error running integration tests: {str(e)}")
+        return False
 
 
-def run_api_tests(interactive=False):
-    """Run API connectivity tests."""
-    print("🌐 Running API Connectivity Tests")
+def run_system_tests(verbose=False):
+    """Run system tests."""
+    print("🖥️  Running System Tests")
     print("=" * 60)
     
-    if interactive:
-        from tests.test_api import InteractiveAPITest
-        interactive_test = InteractiveAPITest()
-        return interactive_test.run_full_test_suite()
-    else:
-        import unittest
-        from tests.test_api import TestAPIConnectivity
+    try:
+        cmd = [sys.executable, "-m", "pytest", "tests/system/", "-v" if verbose else "-q"]
+        result = subprocess.run(cmd, cwd=project_root, capture_output=True, text=True)
         
-        suite = unittest.TestLoader().loadTestsFromTestCase(TestAPIConnectivity)
-        runner = unittest.TextTestRunner(verbosity=2)
-        result = runner.run(suite)
-        return result.wasSuccessful()
+        if result.returncode == 0:
+            print("✅ System tests passed")
+            if verbose:
+                print(result.stdout)
+            return True
+        else:
+            print("❌ System tests failed")
+            print(result.stdout)
+            print(result.stderr)
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error running system tests: {str(e)}")
+        return False
 
 
-def run_config_tests():
-    """Run configuration tests."""
-    print("⚙️  Running Configuration Tests")
+def run_performance_tests(verbose=False):
+    """Run performance tests."""
+    print("⚡ Running Performance Tests")
     print("=" * 60)
     
-    import unittest
-    from tests.test_config import TestConfig
-    from tests.test_config_real_env import TestConfigWithRealEnv
-    
-    # Create test suite
-    suite = unittest.TestSuite()
-    suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestConfig))
-    suite.addTests(unittest.TestLoader().loadTestsFromTestCase(TestConfigWithRealEnv))
-    
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    return result.wasSuccessful()
+    try:
+        cmd = [sys.executable, "-m", "pytest", "tests/performance/", "-v" if verbose else "-q", "--benchmark-only"]
+        result = subprocess.run(cmd, cwd=project_root, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            print("✅ Performance tests passed")
+            if verbose:
+                print(result.stdout)
+            return True
+        else:
+            print("❌ Performance tests failed")
+            print(result.stdout)
+            print(result.stderr)
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error running performance tests: {str(e)}")
+        return False
 
 
-def run_all_tests(comprehensive=False, interactive=False):
+def run_legacy_tests():
+    """Run legacy test files for backward compatibility."""
+    print("🔄 Running Legacy Tests")
+    print("=" * 60)
+    
+    # Check if pytest is available
+    try:
+        import pytest
+        pytest_available = True
+    except ImportError:
+        pytest_available = False
+    
+    if not pytest_available:
+        print("⚠️  pytest not available, falling back to unittest")
+        # Run individual test files
+        success = True
+        
+        # Run unit tests
+        try:
+            from tests.unit.test_config_real_env import TestConfigWithRealEnv
+            import unittest
+            
+            suite = unittest.TestLoader().loadTestsFromTestCase(TestConfigWithRealEnv)
+            runner = unittest.TextTestRunner(verbosity=2)
+            result = runner.run(suite)
+            success &= result.wasSuccessful()
+        except Exception as e:
+            print(f"❌ Error running config tests: {str(e)}")
+            success = False
+        
+        return success
+    else:
+        # Use pytest for all tests
+        return run_all_tests_with_pytest()
+
+
+def run_all_tests_with_pytest(verbose=False, auth_required=False, include_performance=False):
+    """Run all tests using pytest."""
+    print("🧪 CVLens-Agent Complete Test Suite (pytest)")
+    print("=" * 60)
+    
+    cmd = [sys.executable, "-m", "pytest", "tests/", "-v" if verbose else "-q"]
+    
+    if auth_required:
+        cmd.append("--auth-required")
+    
+    if not include_performance:
+        cmd.extend(["--ignore=tests/performance/"])
+    
+    try:
+        result = subprocess.run(cmd, cwd=project_root)
+        return result.returncode == 0
+    except Exception as e:
+        print(f"❌ Error running pytest: {str(e)}")
+        return False
+
+
+def run_all_tests(verbose=False, auth_required=False, include_performance=False):
     """Run all test suites."""
     print("🧪 CVLens-Agent Complete Test Suite")
     print("=" * 60)
@@ -96,11 +181,13 @@ def run_all_tests(comprehensive=False, interactive=False):
     
     # Run tests in order
     test_suites = [
-        ("Environment Tests", lambda: run_environment_tests(comprehensive)),
-        ("Application Tests", lambda: run_app_tests(comprehensive)),
-        ("Configuration Tests", run_config_tests),
-        ("API Tests", lambda: run_api_tests(interactive)),
+        ("Unit Tests", lambda: run_unit_tests(verbose)),
+        ("Integration Tests", lambda: run_integration_tests(verbose, auth_required)),
+        ("System Tests", lambda: run_system_tests(verbose)),
     ]
+    
+    if include_performance:
+        test_suites.append(("Performance Tests", lambda: run_performance_tests(verbose)))
     
     for test_name, test_func in test_suites:
         print(f"\n{'='*60}")
@@ -152,56 +239,63 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python tests/run_tests.py                    # Run basic tests
-  python tests/run_tests.py --all              # Run all test suites
-  python tests/run_tests.py --environment      # Run environment tests only
-  python tests/run_tests.py --api --interactive # Run interactive API tests
-  python tests/run_tests.py --all --comprehensive --interactive # Full test suite
+  python tests/run_tests.py                    # Run all tests
+  python tests/run_tests.py --unit             # Run unit tests only
+  python tests/run_tests.py --integration      # Run integration tests only
+  python tests/run_tests.py --system           # Run system tests only
+  python tests/run_tests.py --performance      # Run performance tests only
+  python tests/run_tests.py --all --verbose    # Run all tests with verbose output
+  python tests/run_tests.py --integration --auth-required # Run integration tests with auth
         """
     )
     
     # Test suite selection
     parser.add_argument('--all', action='store_true', 
                        help='Run all test suites')
-    parser.add_argument('--environment', action='store_true',
-                       help='Run environment tests')
-    parser.add_argument('--app', action='store_true',
-                       help='Run application component tests')
-    parser.add_argument('--api', action='store_true',
-                       help='Run API connectivity tests')
-    parser.add_argument('--config', action='store_true',
-                       help='Run configuration tests')
+    parser.add_argument('--unit', action='store_true',
+                       help='Run unit tests')
+    parser.add_argument('--integration', action='store_true',
+                       help='Run integration tests')
+    parser.add_argument('--system', action='store_true',
+                       help='Run system tests')
+    parser.add_argument('--performance', action='store_true',
+                       help='Run performance tests')
+    parser.add_argument('--legacy', action='store_true',
+                       help='Run legacy tests for backward compatibility')
     
     # Test options
-    parser.add_argument('--comprehensive', action='store_true',
-                       help='Run comprehensive tests with detailed output')
-    parser.add_argument('--interactive', action='store_true',
-                       help='Run interactive tests (includes authentication)')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                       help='Run tests with verbose output')
+    parser.add_argument('--auth-required', action='store_true',
+                       help='Run tests that require authentication')
     
     args = parser.parse_args()
     
-    # If no specific test is selected, run basic environment tests
-    if not any([args.all, args.environment, args.app, args.api, args.config]):
-        print("No specific test selected. Running environment tests...")
-        success = run_environment_tests(args.comprehensive)
+    # If no specific test is selected, run all tests
+    if not any([args.all, args.unit, args.integration, args.system, args.performance, args.legacy]):
+        print("No specific test selected. Running all tests...")
+        success = run_all_tests(args.verbose, args.auth_required, False)
         sys.exit(0 if success else 1)
     
     success = True
     
     if args.all:
-        success = run_all_tests(args.comprehensive, args.interactive)
+        success = run_all_tests(args.verbose, args.auth_required, True)
     else:
-        if args.environment:
-            success &= run_environment_tests(args.comprehensive)
+        if args.unit:
+            success &= run_unit_tests(args.verbose)
         
-        if args.app:
-            success &= run_app_tests(args.comprehensive)
+        if args.integration:
+            success &= run_integration_tests(args.verbose, args.auth_required)
         
-        if args.config:
-            success &= run_config_tests()
+        if args.system:
+            success &= run_system_tests(args.verbose)
         
-        if args.api:
-            success &= run_api_tests(args.interactive)
+        if args.performance:
+            success &= run_performance_tests(args.verbose)
+        
+        if args.legacy:
+            success &= run_legacy_tests()
     
     sys.exit(0 if success else 1)
 
