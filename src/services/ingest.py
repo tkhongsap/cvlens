@@ -5,7 +5,7 @@ import hashlib
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
-from O365 import Mailbox, Message
+from O365 import Message
 from src.config import config, CACHE_DIR
 from src.auth.graph_auth import graph_auth
 from src.models.database import db
