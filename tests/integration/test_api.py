@@ -36,7 +36,7 @@ class TestAPIConnectivity(unittest.TestCase):
             self.assertTrue(config.client_id, "CLIENT_ID not configured")
             self.assertNotEqual(config.tenant_id, "your_azure_tenant_id", 
                               "TENANT_ID not properly configured - please set your actual Azure tenant ID")
-            self.assertEqual(len(config.aes_key), 32, "AES_KEY not properly configured")
+            self.assertEqual(len(config.aes_key), 32, "AES_KEY not properly configured (should be 32 bytes when decoded)")
             
             print(f"✅ CLIENT_ID: {config.client_id[:8]}...")
             print(f"✅ TENANT_ID: {config.tenant_id[:8]}...")
@@ -144,9 +144,12 @@ class TestAPIConnectivity(unittest.TestCase):
         print("-" * 50)
         
         try:
-            from src.services.ingest import email_ingestor
+            from src.services.ingest import EmailIngestor
+            from src.auth.graph_auth import graph_auth
             
-            if not email_ingestor.graph_auth.is_authenticated():
+            email_ingestor = EmailIngestor()
+            
+            if not graph_auth.is_authenticated():
                 print("⚠️  Not authenticated - skipping email service test")
                 self.skipTest("Authentication required for email service")
             

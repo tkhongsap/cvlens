@@ -1,224 +1,285 @@
 # CVLens-Agent Test Suite
 
-This directory contains comprehensive tests for the CVLens-Agent application, organized into different test categories for better maintainability and clarity.
+This directory contains comprehensive tests for the CVLens-Agent application, organized into different test categories for better maintainability, clarity, and execution speed.
 
-## Test Structure
+## 🏗️ Test Structure
 
 ```
 tests/
-├── README.md                 # This file
-├── run_tests.py             # Main test runner script
-├── test_environment.py      # Environment and configuration tests
-├── test_api.py             # API connectivity tests
-├── test_app.py             # Application component tests
-├── test_config.py          # Configuration unit tests
-├── test_config_real_env.py # Real environment configuration tests
-└── __init__.py             # Package initialization
+├── unit/                    # Fast unit tests (no external dependencies)
+│   └── test_config_real_env.py
+├── integration/             # Integration tests (component interactions)
+│   └── test_api.py
+├── system/                  # System tests (end-to-end workflows)
+│   └── test_app.py
+├── performance/             # Performance and benchmark tests
+├── fixtures/                # Test data and mock responses
+│   ├── sample_resumes/
+│   ├── test_emails/
+│   └── mock_responses/
+├── run_tests.py            # Main test runner
+├── README.md               # This file
+├── TESTING_STRATEGY.md     # Detailed testing strategy
+└── __init__.py
 ```
 
-## Quick Start
+## 🚀 Quick Start
 
-### Run All Tests
+### Run All Tests (Recommended)
 ```bash
-# Basic test run
-python tests/run_tests.py --all
+# Run all tests with default settings
+python tests/run_tests.py
 
-# Comprehensive test run with detailed output
-python tests/run_tests.py --all --comprehensive
+# Run all tests with verbose output
+python tests/run_tests.py --all --verbose
 
-# Full test suite including interactive authentication
-python tests/run_tests.py --all --comprehensive --interactive
+# Run all tests including performance tests
+python tests/run_tests.py --all --verbose
 ```
 
-### Run Specific Test Suites
+### Run Specific Test Categories
 
-#### Environment Tests
-Tests environment configuration, .env file, and basic setup:
+#### Unit Tests (Fast, No Dependencies)
 ```bash
-# Basic environment tests
-python tests/run_tests.py --environment
+# Run unit tests only
+python tests/run_tests.py --unit
 
-# Comprehensive environment tests
-python tests/run_tests.py --environment --comprehensive
+# Run unit tests with verbose output
+python tests/run_tests.py --unit --verbose
 ```
 
-#### API Connectivity Tests
-Tests Microsoft Graph API connection and authentication:
+#### Integration Tests (Component Interactions)
 ```bash
-# Basic API tests (no authentication)
-python tests/run_tests.py --api
+# Run integration tests (no authentication)
+python tests/run_tests.py --integration
 
-# Interactive API tests (includes authentication flow)
-python tests/run_tests.py --api --interactive
+# Run integration tests with authentication
+python tests/run_tests.py --integration --auth-required --verbose
 ```
 
-#### Application Component Tests
-Tests application structure and module imports:
+#### System Tests (End-to-End)
 ```bash
-# Basic app tests
-python tests/run_tests.py --app
+# Run system tests
+python tests/run_tests.py --system
 
-# Comprehensive app tests
-python tests/run_tests.py --app --comprehensive
+# Run system tests with verbose output
+python tests/run_tests.py --system --verbose
 ```
 
-#### Configuration Tests
-Tests configuration loading and validation:
+#### Performance Tests
 ```bash
-python tests/run_tests.py --config
+# Run performance tests
+python tests/run_tests.py --performance --verbose
 ```
 
-## Individual Test Files
+## 📋 Test Categories Explained
 
-You can also run individual test files directly:
+### 1. Unit Tests (`tests/unit/`)
+**Purpose**: Test individual functions and classes in isolation
+- ✅ Fast execution (< 5 seconds total)
+- ✅ No external dependencies (network, files, databases)
+- ✅ Use mocks for external services
+- ✅ High code coverage focus
+
+**Current Tests**:
+- `test_config_real_env.py` - Configuration loading and validation
+
+### 2. Integration Tests (`tests/integration/`)
+**Purpose**: Test component interactions and API connectivity
+- ✅ Medium execution time (< 30 seconds total)
+- ✅ May use real services with test data
+- ✅ Test authentication flows
+- ✅ Test API integrations
+
+**Current Tests**:
+- `test_api.py` - Microsoft Graph API connectivity and authentication
+
+### 3. System Tests (`tests/system/`)
+**Purpose**: Test complete workflows and application startup
+- ✅ Slower execution (< 2 minutes total)
+- ✅ Test complete user workflows
+- ✅ Test application startup and configuration
+- ✅ End-to-end validation
+
+**Current Tests**:
+- `test_app.py` - Application component loading and structure validation
+
+### 4. Performance Tests (`tests/performance/`)
+**Purpose**: Benchmark performance characteristics
+- ✅ Variable execution time
+- ✅ Memory usage testing
+- ✅ Processing speed benchmarks
+- ✅ Scalability testing
+
+**Planned Tests**:
+- Document parsing performance
+- Scoring algorithm benchmarks
+- Memory usage profiling
+
+## 🔧 Test Execution Options
+
+### Command Line Flags
+
+| Flag | Description |
+|------|-------------|
+| `--all` | Run all test suites including performance |
+| `--unit` | Run unit tests only |
+| `--integration` | Run integration tests only |
+| `--system` | Run system tests only |
+| `--performance` | Run performance tests only |
+| `--verbose` | Show detailed test output |
+| `--auth-required` | Enable tests that require authentication |
+| `--legacy` | Run legacy tests for backward compatibility |
+
+### Using pytest Directly
+
+You can also use pytest directly for more control:
 
 ```bash
-# Environment tests
-python -m tests.test_environment
-python -m tests.test_environment --comprehensive
+# Run all tests
+pytest tests/
 
-# API tests
-python -m tests.test_api
-python -m tests.test_api --interactive
+# Run specific category
+pytest tests/unit/
+pytest tests/integration/
+pytest tests/system/
 
-# App tests
-python -m tests.test_app
-python -m tests.test_app --comprehensive
+# Run with coverage
+pytest tests/ --cov=src --cov-report=html
 
-# Config tests (standard unittest)
-python -m unittest tests.test_config
-python -m unittest tests.test_config_real_env
+# Run with specific markers
+pytest tests/ -m "not slow"
+pytest tests/ -m "auth_required"
 ```
 
-## Test Categories
+## 📊 Test Quality Standards
 
-### 1. Environment Tests (`test_environment.py`)
-- ✅ `.env` file existence and loading
-- ✅ Required environment variables (CLIENT_ID, TENANT_ID, AES_KEY)
-- ✅ Optional environment variables (DEBUG, LOG_LEVEL, TESSERACT_CMD)
-- ✅ Configuration module loading
-- ✅ Database connection
-- ✅ Authentication module initialization
-- ✅ Service module imports
-- ✅ Required files existence
+### Code Coverage Targets
+- **Unit Tests**: Minimum 80% code coverage
+- **Integration Tests**: 60% coverage for integration paths
+- **System Tests**: All critical user workflows covered
 
-### 2. API Connectivity Tests (`test_api.py`)
-- ✅ Environment setup for API testing
-- ✅ Authentication module initialization
-- ✅ Existing authentication check
-- ✅ Mailbox access (requires authentication)
-- ✅ Email service functionality (requires authentication)
-- 🔐 Interactive authentication flow
+### Performance Standards
+- **Unit Tests**: < 100ms per test
+- **Integration Tests**: < 5 seconds per test
+- **System Tests**: < 30 seconds per test
 
-### 3. Application Component Tests (`test_app.py`)
-- ✅ Core module imports (config, database)
-- ✅ Authentication module imports
-- ✅ Service module imports
-- ✅ UI module imports
-- ✅ Main application import
-- ✅ Required files existence
-- ✅ Directory structure validation
+### Reliability Standards
+- Tests must be deterministic (no flaky tests)
+- Proper cleanup after each test
+- Isolated test environments
 
-### 4. Configuration Tests (`test_config.py`, `test_config_real_env.py`)
-- ✅ Configuration class functionality
-- ✅ Settings loading and saving
-- ✅ Environment variable validation
-- ✅ Real environment configuration testing
+## 🛠️ Prerequisites
 
-## Test Flags
+### Required Dependencies
+```bash
+# Install test dependencies
+pip install pytest pytest-cov pytest-benchmark
 
-### `--comprehensive`
-Runs tests with detailed output and additional checks. Provides more verbose information about what's being tested and why.
+# Install project dependencies
+pip install -r requirements.txt
+```
 
-### `--interactive`
-Enables interactive features like authentication flows. Use this when you want to test actual API connectivity and are ready to authenticate with Microsoft Graph.
+### Environment Setup
+1. **Environment Variables**: Copy `env.example` to `.env` and configure
+2. **Azure Setup**: Configure Microsoft Graph application credentials
+3. **Configuration Files**: Ensure `settings.json` and `job_profile.yml` exist
 
-## Prerequisites
+### For Authentication Tests
+- Valid Azure AD application with Mail.Read permissions
+- CLIENT_ID and TENANT_ID configured in .env
+- Valid AES_KEY for encryption
 
-Before running tests, ensure you have:
-
-1. **Environment Setup**: Copy `env.example` to `.env` and configure your values
-2. **Dependencies**: Install required packages with `pip install -r requirements.txt`
-3. **Configuration**: Ensure `settings.json` and `job_profile.yml` exist
-4. **Azure Setup**: Configure your Microsoft Graph application credentials
-
-## Common Test Scenarios
+## 🔍 Common Test Scenarios
 
 ### First-Time Setup Validation
 ```bash
-python tests/run_tests.py --environment --comprehensive
+# Validate environment and basic setup
+python tests/run_tests.py --unit --system --verbose
 ```
 
 ### Pre-Deployment Testing
 ```bash
-python tests/run_tests.py --all --comprehensive
+# Run comprehensive test suite
+python tests/run_tests.py --all --verbose
 ```
 
 ### API Connectivity Verification
 ```bash
-python tests/run_tests.py --api --interactive
+# Test API connectivity with authentication
+python tests/run_tests.py --integration --auth-required --verbose
 ```
 
 ### Development Environment Check
 ```bash
-python tests/run_tests.py --app --environment
+# Quick validation during development
+python tests/run_tests.py --unit --verbose
 ```
 
-## Troubleshooting
+### Performance Monitoring
+```bash
+# Run performance benchmarks
+python tests/run_tests.py --performance --verbose
+```
+
+## 🐛 Troubleshooting
 
 ### Common Issues
 
-1. **Missing .env file**
-   ```bash
-   cp env.example .env
-   # Edit .env with your actual values
-   ```
+**pytest not found**:
+```bash
+pip install pytest pytest-cov pytest-benchmark
+```
 
-2. **Missing dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+**Missing .env file**:
+```bash
+cp env.example .env
+# Edit .env with your actual values
+```
 
-3. **Invalid AES key**
-   ```bash
-   python generate_aes_key.py
-   # Copy the generated key to your .env file
-   ```
+**Authentication failures**:
+- Verify CLIENT_ID and TENANT_ID in .env
+- Ensure Azure app has Mail.Read permissions
+- Run with `--auth-required` flag for authentication tests
 
-4. **Authentication failures**
-   - Verify CLIENT_ID and TENANT_ID in .env
-   - Ensure your Azure app has correct permissions
-   - Run with `--interactive` flag for authentication flow
+**Import errors**:
+- Ensure you're running from project root
+- Check that all dependencies are installed
 
 ### Test Output Interpretation
 
-- ✅ **PASS**: Test completed successfully
-- ❌ **FAIL**: Test failed with assertion error
+- ✅ **PASSED**: Test completed successfully
+- ❌ **FAILED**: Test failed with assertion error
 - ⚠️ **WARNING**: Test passed but with warnings
-- ℹ️ **INFO**: Informational message
-- 🔐 **AUTH REQUIRED**: Test requires authentication
-- 📋 **SKIPPED**: Test was skipped due to missing requirements
+- 🔄 **SKIPPED**: Test was skipped due to missing requirements
 
-## Contributing
+## 📈 Future Enhancements
 
-When adding new tests:
+### Planned Test Additions
+1. **Unit Tests**:
+   - Document parsing functions
+   - Scoring algorithm tests
+   - Database operation tests
+   - Authentication helper tests
 
-1. Follow the existing naming convention (`test_*.py`)
-2. Use proper unittest structure with descriptive test names
-3. Add both basic and comprehensive test modes where applicable
-4. Include proper error handling and informative messages
-5. Update this README with new test descriptions
+2. **Integration Tests**:
+   - Email ingestion pipeline
+   - Document processing pipeline
+   - Complete authentication flow
 
-## Integration with CI/CD
+3. **Performance Tests**:
+   - Large document parsing
+   - Concurrent processing
+   - Memory usage profiling
 
-For automated testing environments:
+### Test Infrastructure Improvements
+- Automated test data generation
+- Mock email server for testing
+- Continuous integration setup
+- Test result reporting and metrics
 
-```bash
-# Basic validation (no interactive components)
-python tests/run_tests.py --all
+## 📚 Additional Resources
 
-# Environment-specific testing
-python tests/run_tests.py --environment --config
-```
-
-The test suite is designed to work in both interactive development environments and automated CI/CD pipelines. 
+- [TESTING_STRATEGY.md](TESTING_STRATEGY.md) - Detailed testing strategy and standards
+- [pytest documentation](https://docs.pytest.org/) - pytest framework documentation
+- [Azure Graph API Testing](https://docs.microsoft.com/en-us/graph/) - Microsoft Graph API documentation 
