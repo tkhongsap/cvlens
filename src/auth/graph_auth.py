@@ -33,11 +33,11 @@ class GraphAuthenticator:
             
             # Create account with tenant
             self._account = Account(
-                credentials=(self.client_id, None),  # No client secret for device flow
+                credentials=self.client_id,  # Just client_id for public flow
                 tenant_id=self.tenant_id,
                 token_backend=token_backend,
                 scopes=self.scopes,
-                auth_flow_type='device'
+                auth_flow_type='public'  # Use 'public' for device code flow
             )
             
         return self._account
