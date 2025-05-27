@@ -167,6 +167,9 @@ class EmailIngestor:
                         )
                         continue
                     
+                    # Extract email content
+                    email_content = self._extract_email_content(message)
+                    
                     # Create candidate record
                     candidate_data = {
                         'email_id': message.object_id,
@@ -174,6 +177,7 @@ class EmailIngestor:
                         'sender_email': message.sender.address if message.sender else None,
                         'sender_name': message.sender.name if message.sender else None,
                         'subject': message.subject,
+                        'email_body': email_content,
                         'resume_filename': attachment.name,
                         'resume_hash': file_hash,
                         'resume_size_bytes': attachment.size
@@ -228,11 +232,39 @@ class EmailIngestor:
         
         # Save file
         file_path = email_dir / attachment.name
-        with open(file_path, 'wb') as f:
-            f.write(attachment.content)
         
-        logger.debug(f"Saved attachment: {file_path}")
-        return file_path
+        try:
+            # Try different ways to get attachment content
+            if hasattr(attachment, 'content'):
+                content = attachment.content
+            elif hasattr(attachment, 'get_content'):
+                content = attachment.get_content()
+            else:
+                # Fallback: save the attachment directly
+                attachment.save(email_dir)
+                logger.debug(f"Saved attachment using save method: {file_path}")
+                return file_path
+            
+            # Ensure content is bytes
+            if isinstance(content, str):
+                content = content.encode('utf-8')
+            
+            with open(file_path, 'wb') as f:
+                f.write(content)
+            
+            logger.debug(f"Saved attachment: {file_path}")
+            return file_path
+            
+        except Exception as e:
+            logger.error(f"Error saving attachment {attachment.name}: {str(e)}")
+            # Try alternative approach
+            try:
+                attachment.save(email_dir)
+                logger.debug(f"Saved attachment using fallback method: {file_path}")
+                return file_path
+            except Exception as e2:
+                logger.error(f"Fallback save also failed: {str(e2)}")
+                raise e
     
     def _calculate_file_hash(self, file_path: Path) -> str:
         """Calculate SHA-256 hash of file."""
@@ -241,6 +273,26 @@ class EmailIngestor:
             for byte_block in iter(lambda: f.read(4096), b""):
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
+    
+    def _extract_email_content(self, message) -> str:
+        """Extract email body content."""
+        try:
+            # Try to get text content
+            if hasattr(message, 'body_preview'):
+                return message.body_preview
+            elif hasattr(message, 'body'):
+                # Handle different body types
+                if hasattr(message.body, 'content'):
+                    return message.body.content
+                else:
+                    return str(message.body)
+            elif hasattr(message, 'text_body'):
+                return message.text_body
+            else:
+                return ""
+        except Exception as e:
+            logger.warning(f"Could not extract email content: {str(e)}")
+            return ""
 
 
 # Global ingestor instance

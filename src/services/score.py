@@ -2,6 +2,7 @@
 
 import logging
 import yaml
+import json
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -57,7 +58,7 @@ class CandidateScorer:
                     
                     # Update candidate
                     candidate.score = score
-                    candidate.score_breakdown = breakdown
+                    candidate.score_breakdown = db.cipher.encrypt(json.dumps(breakdown))
                     candidate.is_scored = True
                     
                     success_count += 1

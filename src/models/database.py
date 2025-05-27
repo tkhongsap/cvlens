@@ -63,6 +63,12 @@ class Candidate(Base):
     education = Column(LargeBinary)  # Encrypted JSON array
     experience = Column(LargeBinary)  # Encrypted JSON array
     
+    # Comprehensive report fields (encrypted)
+    executive_summary = Column(LargeBinary)  # Encrypted executive summary
+    experience_highlights = Column(LargeBinary)  # Encrypted JSON array
+    education_highlights = Column(LargeBinary)  # Encrypted JSON array
+    interesting_facts = Column(LargeBinary)  # Encrypted JSON array
+    
     # Scoring
     score = Column(Float, default=0.0)
     score_breakdown = Column(LargeBinary)  # Encrypted JSON with detailed scoring
@@ -99,6 +105,10 @@ class Candidate(Base):
             'skills': json.loads(cipher.decrypt(self.skills)) if self.skills else [],
             'education': json.loads(cipher.decrypt(self.education)) if self.education else [],
             'experience': json.loads(cipher.decrypt(self.experience)) if self.experience else [],
+            'executive_summary': cipher.decrypt(self.executive_summary) if self.executive_summary else None,
+            'experience_highlights': json.loads(cipher.decrypt(self.experience_highlights)) if self.experience_highlights else [],
+            'education_highlights': json.loads(cipher.decrypt(self.education_highlights)) if self.education_highlights else [],
+            'interesting_facts': json.loads(cipher.decrypt(self.interesting_facts)) if self.interesting_facts else [],
             'score': self.score,
             'score_breakdown': json.loads(cipher.decrypt(self.score_breakdown)) if self.score_breakdown else {},
             'status': self.status,

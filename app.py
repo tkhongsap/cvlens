@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # Import after streamlit to avoid import issues
-from src.config import config
+from src.config import config, CACHE_DIR
 from src.auth.graph_auth import graph_auth
 from src.services.ingest import email_ingestor
 from src.services.parse import resume_parser
@@ -398,9 +398,65 @@ def show_candidate_details(candidate_id: int):
                     st.metric("Experience", f"{experience.get('score', 0)*100:.0f}%")
                     st.caption(f"Years: {experience.get('total_years', 0):.1f}")
             
+            # Comprehensive Report Section
+            st.markdown("**📊 Comprehensive Candidate Report**")
+            
+            # Check if comprehensive report data is available
+            has_comprehensive_data = any([
+                decrypted.get('executive_summary'),
+                decrypted.get('experience_highlights'),
+                decrypted.get('education_highlights'),
+                decrypted.get('interesting_facts')
+            ])
+            
+            if not has_comprehensive_data:
+                st.info("💡 Comprehensive report not available. This candidate may have been processed before the enhanced analysis was implemented. Try re-syncing to generate a comprehensive report.")
+            else:
+                # Display executive summary if available
+                executive_summary = decrypted.get('executive_summary', '')
+                if executive_summary:
+                    st.markdown("**Executive Summary**")
+                    st.info(executive_summary)
+                
+                # Display report sections in columns
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Experience highlights
+                    experience_highlights = decrypted.get('experience_highlights', [])
+                    if experience_highlights:
+                        st.markdown("**🏢 Experience Highlights**")
+                        for highlight in experience_highlights:
+                            st.write(f"• {highlight}")
+                    
+                    # Key skills
+                    skills = decrypted.get('skills', [])
+                    if skills:
+                        st.markdown("**🛠️ Key Skills**")
+                        # Display skills as tags
+                        skills_text = " • ".join(skills[:10])  # Limit to first 10 skills
+                        st.write(skills_text)
+                        if len(skills) > 10:
+                            st.caption(f"... and {len(skills) - 10} more skills")
+                
+                with col2:
+                    # Education highlights
+                    education_highlights = decrypted.get('education_highlights', [])
+                    if education_highlights:
+                        st.markdown("**🎓 Education Highlights**")
+                        for edu in education_highlights:
+                            st.write(f"• {edu}")
+                    
+                    # Interesting facts
+                    interesting_facts = decrypted.get('interesting_facts', [])
+                    if interesting_facts:
+                        st.markdown("**✨ Interesting Facts**")
+                        for fact in interesting_facts:
+                            st.write(f"• {fact}")
+            
             # Actions
             st.markdown("**Actions**")
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3, col4, col5 = st.columns(5)
             
             with col1:
                 if st.button("✅ Interested", key=f"interested_{candidate_id}"):
@@ -416,7 +472,7 @@ def show_candidate_details(candidate_id: int):
             
             with col4:
                 # Download resume button
-                cache_path = Path(config.CACHE_DIR) / candidate.email_id / candidate.resume_filename
+                cache_path = Path(CACHE_DIR) / candidate.email_id / candidate.resume_filename
                 if cache_path.exists():
                     with open(cache_path, 'rb') as f:
                         st.download_button(
@@ -426,6 +482,14 @@ def show_candidate_details(candidate_id: int):
                             mime="application/octet-stream",
                             key=f"download_{candidate_id}"
                         )
+            
+            with col5:
+                # Download comprehensive report button
+                if has_comprehensive_data:
+                    if st.button("📋 Report", key=f"report_{candidate_id}"):
+                        generate_report_download(candidate_id, decrypted)
+                else:
+                    st.button("📋 Report", disabled=True, key=f"report_disabled_{candidate_id}", help="Comprehensive report not available")
             
             # Notes
             st.markdown("**Notes**")
@@ -472,6 +536,111 @@ def save_candidate_notes(candidate_id: int, notes: str):
                 st.rerun()
     except Exception as e:
         st.error(f"Error saving notes: {str(e)}")
+
+
+def generate_report_download(candidate_id: int, decrypted_data: dict):
+    """Generate and download comprehensive candidate report."""
+    try:
+        # Get candidate info
+        candidate_name = decrypted_data.get('candidate_name', 'Unknown Candidate')
+        
+        # Generate comprehensive report content
+        report_content = f"""
+# Comprehensive Candidate Report
+**Generated on:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+## Candidate Information
+- **Name:** {decrypted_data.get('candidate_name', 'N/A')}
+- **Email:** {decrypted_data.get('candidate_email', 'N/A')}
+- **Phone:** {decrypted_data.get('candidate_phone', 'N/A')}
+- **Resume:** {decrypted_data.get('resume_filename', 'N/A')}
+
+## Executive Summary
+{decrypted_data.get('executive_summary', 'No executive summary available.')}
+
+## Experience Highlights
+"""
+        
+        experience_highlights = decrypted_data.get('experience_highlights', [])
+        if experience_highlights:
+            for i, highlight in enumerate(experience_highlights, 1):
+                report_content += f"{i}. {highlight}\n"
+        else:
+            report_content += "No experience highlights available.\n"
+        
+        report_content += "\n## Education Highlights\n"
+        education_highlights = decrypted_data.get('education_highlights', [])
+        if education_highlights:
+            for i, edu in enumerate(education_highlights, 1):
+                report_content += f"{i}. {edu}\n"
+        else:
+            report_content += "No education highlights available.\n"
+        
+        report_content += "\n## Key Skills\n"
+        skills = decrypted_data.get('skills', [])
+        if skills:
+            # Group skills in rows of 5
+            for i in range(0, len(skills), 5):
+                skill_group = skills[i:i+5]
+                report_content += "• " + " • ".join(skill_group) + "\n"
+        else:
+            report_content += "No skills identified.\n"
+        
+        report_content += "\n## Interesting Facts\n"
+        interesting_facts = decrypted_data.get('interesting_facts', [])
+        if interesting_facts:
+            for i, fact in enumerate(interesting_facts, 1):
+                report_content += f"{i}. {fact}\n"
+        else:
+            report_content += "No interesting facts available.\n"
+        
+        # Add scoring information
+        score_breakdown = decrypted_data.get('score_breakdown', {})
+        if score_breakdown:
+            report_content += f"\n## Scoring Analysis\n"
+            report_content += f"**Overall Score:** {score_breakdown.get('total_score', 0):.1f}/100\n\n"
+            
+            skills_score = score_breakdown.get('skills', {})
+            education_score = score_breakdown.get('education', {})
+            experience_score = score_breakdown.get('experience', {})
+            
+            report_content += f"### Skills Assessment\n"
+            report_content += f"- Score: {skills_score.get('score', 0)*100:.1f}%\n"
+            report_content += f"- Weight: {skills_score.get('weight', 0)}%\n"
+            matched_skills = skills_score.get('matched_skills', [])
+            if matched_skills:
+                report_content += f"- Matched Skills: {', '.join(matched_skills)}\n"
+            
+            report_content += f"\n### Education Assessment\n"
+            report_content += f"- Score: {education_score.get('score', 0)*100:.1f}%\n"
+            report_content += f"- Weight: {education_score.get('weight', 0)}%\n"
+            
+            report_content += f"\n### Experience Assessment\n"
+            report_content += f"- Score: {experience_score.get('score', 0)*100:.1f}%\n"
+            report_content += f"- Weight: {experience_score.get('weight', 0)}%\n"
+            report_content += f"- Total Years: {experience_score.get('total_years', 0):.1f}\n"
+        
+        # Add notes if available
+        notes = decrypted_data.get('notes', '')
+        if notes:
+            report_content += f"\n## Notes\n{notes}\n"
+        
+        # Generate filename
+        safe_name = "".join(c for c in candidate_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        filename = f"Candidate_Report_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+        
+        # Create download button
+        st.download_button(
+            label="📥 Download Report",
+            data=report_content,
+            file_name=filename,
+            mime="text/markdown",
+            key=f"download_report_{candidate_id}"
+        )
+        
+    except Exception as e:
+        st.error(f"Error generating report: {str(e)}")
+        logger.error(f"Report generation error: {str(e)}")
 
 
 def export_candidates():
@@ -527,9 +696,9 @@ def purge_data():
         if db.purge_all_data():
             # Also clear cache directory
             import shutil
-            if config.CACHE_DIR.exists():
-                shutil.rmtree(config.CACHE_DIR)
-                config.CACHE_DIR.mkdir(exist_ok=True)
+            if CACHE_DIR.exists():
+                shutil.rmtree(CACHE_DIR)
+                CACHE_DIR.mkdir(exist_ok=True)
             
             st.success("✅ All data has been purged")
             st.rerun()
