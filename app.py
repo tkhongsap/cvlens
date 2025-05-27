@@ -25,13 +25,7 @@ from src.models.database import db
 
 logger = logging.getLogger(__name__)
 
-# Initialize session state
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-if 'selected_folder' not in st.session_state:
-    st.session_state.selected_folder = None
-if 'sync_in_progress' not in st.session_state:
-    st.session_state.sync_in_progress = False
+# Session state is initialized at the bottom of the file
 
 
 def main():
@@ -546,7 +540,16 @@ def purge_data():
         logger.error(f"Purge error: {str(e)}")
 
 
-if __name__ == "__main__":
+# Initialize session state at startup
+def initialize_session_state():
+    """Initialize session state variables."""
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+    if 'selected_folder' not in st.session_state:
+        st.session_state.selected_folder = None
+    if 'sync_in_progress' not in st.session_state:
+        st.session_state.sync_in_progress = False
+    
     # Check if authenticated on startup
     if graph_auth.is_authenticated():
         st.session_state.authenticated = True
@@ -555,6 +558,10 @@ if __name__ == "__main__":
     folder_id = config.get_setting('folder_id')
     if folder_id:
         st.session_state.selected_folder = folder_id
-    
+
+# Initialize session state
+initialize_session_state()
+
+if __name__ == "__main__":
     # Run main app
     main() 

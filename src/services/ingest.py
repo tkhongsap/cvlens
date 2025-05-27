@@ -28,18 +28,21 @@ class EmailIngestor:
             folders = []
             
             # Get all folders recursively
-            def traverse_folders(folder, level=0):
+            def traverse_folders(folder, level=0, parent_path=""):
+                # Build full path name
+                full_name = f"{parent_path}/{folder.name}" if parent_path else folder.name
+                
                 folders.append({
                     'id': folder.folder_id,
                     'name': folder.name,
-                    'full_name': folder.full_name,
+                    'full_name': full_name,
                     'level': level,
-                    'parent_id': folder.parent_id
+                    'parent_id': getattr(folder, 'parent_id', None)
                 })
                 
                 # Get child folders
                 for child in folder.get_folders():
-                    traverse_folders(child, level + 1)
+                    traverse_folders(child, level + 1, full_name)
             
             # Start from root
             for folder in mailbox.get_folders():
