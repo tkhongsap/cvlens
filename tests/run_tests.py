@@ -44,8 +44,11 @@ def run_integration_tests(verbose=False, auth_required=False):
     
     try:
         cmd = [sys.executable, "-m", "pytest", "tests/integration/", "-v" if verbose else "-q"]
+        # Don't pass --auth-required to pytest, handle it via environment variable instead
         if auth_required:
-            cmd.append("--auth-required")
+            os.environ['CVLENS_AUTH_REQUIRED'] = 'true'
+        else:
+            os.environ.pop('CVLENS_AUTH_REQUIRED', None)
             
         result = subprocess.run(cmd, cwd=project_root, capture_output=True, text=True)
         
@@ -158,8 +161,11 @@ def run_all_tests_with_pytest(verbose=False, auth_required=False, include_perfor
     
     cmd = [sys.executable, "-m", "pytest", "tests/", "-v" if verbose else "-q"]
     
+    # Handle auth_required via environment variable instead of pytest argument
     if auth_required:
-        cmd.append("--auth-required")
+        os.environ['CVLENS_AUTH_REQUIRED'] = 'true'
+    else:
+        os.environ.pop('CVLENS_AUTH_REQUIRED', None)
     
     if not include_performance:
         cmd.extend(["--ignore=tests/performance/"])

@@ -83,11 +83,24 @@ class Config:
         """Get AES encryption key."""
         key_str = os.getenv('AES_KEY', '')
         try:
-            # Decode base64 key
-            return base64.b64decode(key_str)
+            # Try to use the key directly as a Fernet key (should be 44 bytes when encoded)
+            key_bytes = key_str.encode('utf-8')
+            # Test if it's a valid Fernet key
+            Fernet(key_bytes)
+            return key_bytes
         except Exception:
-            # Generate a new key if invalid
-            return Fernet.generate_key()
+            try:
+                # Try to decode as base64 and use as raw key
+                decoded_key = base64.b64decode(key_str)
+                if len(decoded_key) == 32:
+                    # It's a 32-byte raw key, encode it as base64 for Fernet
+                    return base64.b64encode(decoded_key)
+                else:
+                    # Invalid key, generate a new one
+                    return Fernet.generate_key()
+            except Exception:
+                # Generate a new key if invalid
+                return Fernet.generate_key()
     
     @property
     def debug_mode(self) -> bool:
