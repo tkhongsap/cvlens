@@ -3,13 +3,15 @@
 import logging
 import yaml
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from src.config import config
-from src.models.database import db, Candidate
+from src.models.file_storage import file_storage
+from src.models.candidate import CandidateData
 
 logger = logging.getLogger(__name__)
 
@@ -44,52 +46,54 @@ class CandidateScorer:
         success_count = 0
         error_count = 0
         
-        with db.get_session() as session:
-            # Get parsed but unscored candidates
-            candidates = session.query(Candidate).filter(
-                Candidate.is_parsed == True,
-                Candidate.is_scored == False
-            ).all()
-            
-            for candidate in candidates:
-                try:
-                    # Calculate score
-                    score, breakdown = self.score_candidate(candidate)
-                    
-                    # Update candidate
-                    candidate.score = score
-                    candidate.score_breakdown = db.cipher.encrypt(json.dumps(breakdown))
-                    candidate.is_scored = True
-                    
-                    success_count += 1
-                    logger.info(f"Scored {candidate.resume_filename}: {score:.2f}")
-                    
-                    db.log_processing(
-                        session,
-                        candidate.email_id,
-                        'score',
-                        'success',
-                        f'Score: {score:.2f}'
-                    )
-                    
-                except Exception as e:
-                    logger.error(f"Error scoring candidate {candidate.id}: {str(e)}")
-                    error_count += 1
-                    
-                    db.log_processing(
-                        session,
-                        candidate.email_id,
-                        'score',
-                        'failed',
-                        str(e)
-                    )
-            
-            session.commit()
+        # Get all candidates
+        candidates = file_storage.list_all_candidates()
+        
+        # Filter parsed but unscored candidates
+        unscored_candidates = [c for c in candidates if c.is_parsed and not c.is_scored]
+        
+        for candidate in unscored_candidates:
+            try:
+                # Calculate score
+                score, breakdown = self.score_candidate(candidate)
+                
+                # Update candidate
+                candidate.score = score
+                candidate.score_breakdown = breakdown
+                candidate.is_scored = True
+                candidate.updated_at = datetime.utcnow()
+                
+                # Save updated metadata
+                file_storage.save_candidate_metadata(candidate)
+                
+                # Save detailed score report
+                file_storage.save_score_report(candidate.email_id, score, breakdown)
+                
+                success_count += 1
+                logger.info(f"Scored {candidate.resume_filename}: {score:.2f}")
+                
+                file_storage.log_processing(
+                    candidate.email_id,
+                    'score',
+                    'success',
+                    f'Score: {score:.2f}'
+                )
+                
+            except Exception as e:
+                logger.error(f"Error scoring candidate {candidate.email_id}: {str(e)}")
+                error_count += 1
+                
+                file_storage.log_processing(
+                    candidate.email_id,
+                    'score',
+                    'failed',
+                    str(e)
+                )
         
         logger.info(f"Scoring completed: {success_count} success, {error_count} errors")
         return success_count, error_count
     
-    def score_candidate(self, candidate: Candidate) -> Tuple[float, Dict[str, Any]]:
+    def score_candidate(self, candidate: CandidateData) -> Tuple[float, Dict[str, Any]]:
         """
         Calculate match score for a candidate.
         
@@ -103,8 +107,8 @@ class CandidateScorer:
             'experience': 20
         })
         
-        # Decrypt candidate data
-        candidate_dict = candidate.to_dict(db.cipher)
+        # Convert candidate to dict (no decryption needed)
+        candidate_dict = candidate.to_dict()
         
         # Calculate component scores
         skills_score = self._score_skills(candidate_dict)

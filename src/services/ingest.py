@@ -8,7 +8,8 @@ from typing import List, Dict, Any, Optional, Tuple
 from O365 import Message
 from src.config import config, CACHE_DIR
 from src.auth.graph_auth import graph_auth
-from src.models.database import db
+from src.models.file_storage import file_storage
+from src.models.candidate import CandidateData
 
 logger = logging.getLogger(__name__)
 
@@ -77,30 +78,28 @@ class EmailIngestor:
                 query=self._build_query()
             )
             
-            with db.get_session() as session:
-                for message in messages:
-                    try:
-                        # Check if already processed
-                        if db.get_candidate_by_email_id(session, message.object_id):
-                            logger.debug(f"Message already processed: {message.object_id}")
-                            continue
-                        
-                        # Process message
-                        if self._process_message(session, message):
-                            processed_count += 1
-                        else:
-                            error_count += 1
-                            
-                    except Exception as e:
-                        logger.error(f"Error processing message {message.object_id}: {str(e)}")
+            for message in messages:
+                try:
+                    # Check if already processed
+                    if file_storage.load_candidate_metadata(message.object_id):
+                        logger.debug(f"Message already processed: {message.object_id}")
+                        continue
+                    
+                    # Process message
+                    if self._process_message(message):
+                        processed_count += 1
+                    else:
                         error_count += 1
-                        db.log_processing(
-                            session,
-                            message.object_id,
-                            'fetch',
-                            'failed',
-                            str(e)
-                        )
+                        
+                except Exception as e:
+                    logger.error(f"Error processing message {message.object_id}: {str(e)}")
+                    error_count += 1
+                    file_storage.log_processing(
+                        message.object_id,
+                        'fetch',
+                        'failed',
+                        str(e)
+                    )
             
             logger.info(f"Sync completed: {processed_count} processed, {error_count} errors")
             return processed_count, error_count
@@ -123,7 +122,7 @@ class EmailIngestor:
         
         return " and ".join(query_parts)
     
-    def _process_message(self, session, message: Message) -> bool:
+    def _process_message(self, message: Message) -> bool:
         """Process a single email message."""
         try:
             # Download attachments
@@ -137,8 +136,7 @@ class EmailIngestor:
             
             if not resume_attachments:
                 logger.debug(f"No valid attachments in message: {message.object_id}")
-                db.log_processing(
-                    session,
+                file_storage.log_processing(
                     message.object_id,
                     'fetch',
                     'skipped',
@@ -155,11 +153,13 @@ class EmailIngestor:
                     # Calculate hash
                     file_hash = self._calculate_file_hash(file_path)
                     
-                    # Check for duplicate
-                    if db.get_candidate_by_hash(session, file_hash):
+                    # Check for duplicate by hash across all candidates
+                    all_candidates = file_storage.list_all_candidates()
+                    duplicate_found = any(c.resume_hash == file_hash for c in all_candidates)
+                    
+                    if duplicate_found:
                         logger.info(f"Duplicate resume found: {attachment.name}")
-                        db.log_processing(
-                            session,
+                        file_storage.log_processing(
                             message.object_id,
                             'fetch',
                             'skipped',
@@ -171,32 +171,36 @@ class EmailIngestor:
                     email_content = self._extract_email_content(message)
                     
                     # Create candidate record
-                    candidate_data = {
-                        'email_id': message.object_id,
-                        'email_date': message.received,
-                        'sender_email': message.sender.address if message.sender else None,
-                        'sender_name': message.sender.name if message.sender else None,
-                        'subject': message.subject,
-                        'email_body': email_content,
-                        'resume_filename': attachment.name,
-                        'resume_hash': file_hash,
-                        'resume_size_bytes': attachment.size
-                    }
-                    
-                    db.add_candidate(session, candidate_data)
-                    
-                    db.log_processing(
-                        session,
-                        message.object_id,
-                        'fetch',
-                        'success',
-                        f'Processed: {attachment.name}'
+                    candidate = CandidateData(
+                        email_id=message.object_id,
+                        email_date=message.received,
+                        sender_email=message.sender.address if message.sender else "",
+                        sender_name=message.sender.name if message.sender else "",
+                        subject=message.subject or "",
+                        resume_filename=attachment.name,
+                        resume_hash=file_hash,
+                        resume_size_bytes=attachment.size
                     )
+                    
+                    # Save candidate metadata
+                    if file_storage.save_candidate_metadata(candidate):
+                        file_storage.log_processing(
+                            message.object_id,
+                            'fetch',
+                            'success',
+                            f'Processed: {attachment.name}'
+                        )
+                    else:
+                        file_storage.log_processing(
+                            message.object_id,
+                            'fetch',
+                            'failed',
+                            f'Failed to save metadata for: {attachment.name}'
+                        )
                     
                 except Exception as e:
                     logger.error(f"Error processing attachment {attachment.name}: {str(e)}")
-                    db.log_processing(
-                        session,
+                    file_storage.log_processing(
                         message.object_id,
                         'fetch',
                         'failed',
@@ -225,13 +229,14 @@ class EmailIngestor:
         return True
     
     def _save_attachment(self, attachment, email_id: str) -> Path:
-        """Save attachment to cache directory."""
-        # Create email-specific directory
-        email_dir = self.cache_dir / email_id
-        email_dir.mkdir(exist_ok=True)
+        """Save attachment to candidate directory."""
+        # Create candidate-specific directory structure
+        candidate_dir = file_storage.get_candidate_dir(email_id)
+        attachments_dir = candidate_dir / "attachments"
+        attachments_dir.mkdir(parents=True, exist_ok=True)
         
         # Save file
-        file_path = email_dir / attachment.name
+        file_path = attachments_dir / attachment.name
         
         try:
             # Try different ways to get attachment content
@@ -241,7 +246,7 @@ class EmailIngestor:
                 content = attachment.get_content()
             else:
                 # Fallback: save the attachment directly
-                attachment.save(email_dir)
+                attachment.save(attachments_dir)
                 logger.debug(f"Saved attachment using save method: {file_path}")
                 return file_path
             
@@ -259,7 +264,7 @@ class EmailIngestor:
             logger.error(f"Error saving attachment {attachment.name}: {str(e)}")
             # Try alternative approach
             try:
-                attachment.save(email_dir)
+                attachment.save(attachments_dir)
                 logger.debug(f"Saved attachment using fallback method: {file_path}")
                 return file_path
             except Exception as e2:

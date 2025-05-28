@@ -9,7 +9,8 @@ import openai
 import base64
 import os
 from src.config import config, CACHE_DIR
-from src.models.database import db, Candidate
+from src.models.file_storage import file_storage
+from src.models.candidate import CandidateData
 from src.services.prompts import COMPREHENSIVE_ANALYSIS_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ class ResumeParser:
         
     def parse_all_pending(self) -> Tuple[int, int]:
         """
-        Parse all pending resumes in the database.
+        Parse all pending resumes from markdown files.
         
         Returns:
             Tuple of (success_count, error_count)
@@ -38,44 +39,48 @@ class ResumeParser:
         success_count = 0
         error_count = 0
         
-        with db.get_session() as session:
-            # Get unparsed candidates
-            candidates = session.query(Candidate).filter_by(is_parsed=False).all()
-            
-            for candidate in candidates:
-                try:
-                    # Get file path
-                    file_path = CACHE_DIR / candidate.email_id / candidate.resume_filename
-                    
-                    if not file_path.exists():
-                        logger.error(f"Resume file not found: {file_path}")
-                        candidate.parse_error = "File not found"
-                        error_count += 1
-                        continue
-                    
-                    # Parse resume
-                    parsed_data = self.parse_resume(file_path)
-                    
-                    # Update candidate with parsed data
-                    self._update_candidate_with_parsed_data(session, candidate, parsed_data)
-                    
-                    success_count += 1
-                    logger.info(f"Successfully parsed: {candidate.resume_filename}")
-                    
-                except Exception as e:
-                    logger.error(f"Error parsing resume {candidate.resume_filename}: {str(e)}")
-                    candidate.parse_error = str(e)
+        # Get all candidates
+        candidates = file_storage.list_all_candidates()
+        
+        # Filter unparsed candidates
+        unparsed_candidates = [c for c in candidates if not c.is_parsed]
+        
+        for candidate in unparsed_candidates:
+            try:
+                # Get file path
+                candidate_dir = file_storage.get_candidate_dir(candidate.email_id)
+                file_path = candidate_dir / "attachments" / candidate.resume_filename
+                
+                if not file_path.exists():
+                    logger.error(f"Resume file not found: {file_path}")
+                    candidate.parse_error = "File not found"
+                    candidate.updated_at = datetime.utcnow()
+                    file_storage.save_candidate_metadata(candidate)
                     error_count += 1
-                    
-                    db.log_processing(
-                        session,
-                        candidate.email_id,
-                        'parse',
-                        'failed',
-                        str(e)
-                    )
-            
-            session.commit()
+                    continue
+                
+                # Parse resume
+                parsed_data = self.parse_resume(file_path)
+                
+                # Update candidate with parsed data
+                self._update_candidate_with_parsed_data(candidate, parsed_data)
+                
+                success_count += 1
+                logger.info(f"Successfully parsed: {candidate.resume_filename}")
+                
+            except Exception as e:
+                logger.error(f"Error parsing resume {candidate.resume_filename}: {str(e)}")
+                candidate.parse_error = str(e)
+                candidate.updated_at = datetime.utcnow()
+                file_storage.save_candidate_metadata(candidate)
+                error_count += 1
+                
+                file_storage.log_processing(
+                    candidate.email_id,
+                    'parse',
+                    'failed',
+                    str(e)
+                )
         
         logger.info(f"Parsing completed: {success_count} success, {error_count} errors")
         return success_count, error_count
@@ -191,45 +196,48 @@ class ResumeParser:
     
 
     
-    def _update_candidate_with_parsed_data(self, session, candidate: Candidate, parsed_data: Dict[str, Any]):
+    def _update_candidate_with_parsed_data(self, candidate: CandidateData, parsed_data: Dict[str, Any]):
         """Update candidate record with parsed data."""
-        import json
         
-        # Update basic info with encryption
+        # Update basic info (no encryption needed for local files)
         if parsed_data.get('name'):
-            candidate.candidate_name = db.cipher.encrypt(parsed_data['name'])
+            candidate.candidate_name = parsed_data['name']
         if parsed_data.get('email'):
-            candidate.candidate_email = db.cipher.encrypt(parsed_data['email'])
+            candidate.candidate_email = parsed_data['email']
         if parsed_data.get('phone'):
-            candidate.candidate_phone = db.cipher.encrypt(parsed_data['phone'])
-        if parsed_data.get('text'):
-            candidate.resume_text = db.cipher.encrypt(parsed_data['text'])
+            candidate.candidate_phone = parsed_data['phone']
         
-        # Update extracted data with encryption
+        # Update extracted data
         if parsed_data.get('skills'):
-            candidate.skills = db.cipher.encrypt(json.dumps(parsed_data['skills']))
+            candidate.skills = parsed_data['skills']
         if parsed_data.get('education'):
-            candidate.education = db.cipher.encrypt(json.dumps(parsed_data['education']))
+            candidate.education = parsed_data['education']
         if parsed_data.get('experience'):
-            candidate.experience = db.cipher.encrypt(json.dumps(parsed_data['experience']))
+            candidate.experience = parsed_data['experience']
         
-        # Update new fields with encryption
+        # Update new fields
         if parsed_data.get('executive_summary'):
-            candidate.executive_summary = db.cipher.encrypt(parsed_data['executive_summary'])
+            candidate.executive_summary = parsed_data['executive_summary']
         if parsed_data.get('interesting_facts'):
-            candidate.interesting_facts = db.cipher.encrypt(json.dumps(parsed_data['interesting_facts']))
+            candidate.interesting_facts = parsed_data['interesting_facts']
         if parsed_data.get('experience_highlights'):
-            candidate.experience_highlights = db.cipher.encrypt(json.dumps(parsed_data['experience_highlights']))
+            candidate.experience_highlights = parsed_data['experience_highlights']
         if parsed_data.get('education_highlights'):
-            candidate.education_highlights = db.cipher.encrypt(json.dumps(parsed_data['education_highlights']))
+            candidate.education_highlights = parsed_data['education_highlights']
         
         # Update flags
         candidate.is_parsed = True
         candidate.processed_at = datetime.utcnow()
+        candidate.updated_at = datetime.utcnow()
+        
+        # Save updated metadata
+        file_storage.save_candidate_metadata(candidate)
+        
+        # Save detailed resume analysis
+        file_storage.save_resume_analysis(candidate.email_id, parsed_data)
         
         # Log success
-        db.log_processing(
-            session,
+        file_storage.log_processing(
             candidate.email_id,
             'parse',
             'success',

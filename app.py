@@ -21,7 +21,8 @@ from src.auth.graph_auth import graph_auth
 from src.services.ingest import email_ingestor
 from src.services.parse import resume_parser
 from src.services.score import candidate_scorer
-from src.models.database import db
+from src.models.file_storage import file_storage
+from src.models.candidate import CandidateData
 
 logger = logging.getLogger(__name__)
 
@@ -279,270 +280,265 @@ def show_sync_progress():
 def show_candidate_list():
     """Show list of candidates."""
     try:
-        # Get candidates from database
-        with db.get_session() as session:
-            from src.models.database import Candidate
-            candidates = session.query(Candidate).order_by(
-                Candidate.score.desc()
-            ).all()
-            
-            if not candidates:
-                st.info("No candidates found. Click **Sync Emails** to fetch resumes.")
-                return
-            
-            # Convert to dataframe
-            candidate_data = []
-            for candidate in candidates:
-                decrypted = candidate.to_dict(db.cipher)
-                candidate_data.append({
-                    'ID': candidate.id,
-                    'Name': decrypted.get('candidate_name', 'Unknown'),
-                    'Email': decrypted.get('candidate_email', 'N/A'),
-                    'Score': f"{candidate.score:.1f}",
-                    'Status': candidate.status.title(),
-                    'Date': candidate.email_date.strftime('%Y-%m-%d'),
-                    'Resume': candidate.resume_filename
-                })
-            
-            df = pd.DataFrame(candidate_data)
-            
-            # Filters
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                status_filter = st.selectbox(
-                    "Status",
-                    options=['All', 'New', 'Interested', 'Pass'],
-                    index=0
-                )
-            
-            with col2:
-                min_score = st.slider("Min Score", 0, 100, 0)
-            
-            with col3:
-                search_term = st.text_input("Search", placeholder="Name or email...")
-            
-            # Apply filters
-            if status_filter != 'All':
-                df = df[df['Status'] == status_filter]
-            
-            df = df[df['Score'].astype(float) >= min_score]
-            
-            if search_term:
-                mask = (
-                    df['Name'].str.contains(search_term, case=False, na=False) |
-                    df['Email'].str.contains(search_term, case=False, na=False)
-                )
-                df = df[mask]
-            
-            # Display candidates
-            st.subheader(f"📋 Candidates ({len(df)})")
-            
-            # Create expandable rows for each candidate
-            for idx, row in df.iterrows():
-                with st.expander(f"{row['Name']} - Score: {row['Score']} - {row['Status']}"):
-                    show_candidate_details(row['ID'])
+        # Get candidates from file storage
+        candidates = file_storage.list_all_candidates()
+        
+        if not candidates:
+            st.info("No candidates found. Click **Sync Emails** to fetch resumes.")
+            return
+        
+        # Convert to dataframe
+        candidate_data = []
+        for candidate in candidates:
+            candidate_data.append({
+                'ID': candidate.email_id,
+                'Name': candidate.candidate_name or 'Unknown',
+                'Email': candidate.candidate_email or 'N/A',
+                'Score': f"{candidate.score:.1f}",
+                'Status': candidate.status.title(),
+                'Date': candidate.email_date.strftime('%Y-%m-%d') if candidate.email_date else 'N/A',
+                'Resume': candidate.resume_filename
+            })
+        
+        # Sort by score (highest first)
+        candidate_data.sort(key=lambda x: float(x['Score']), reverse=True)
+        df = pd.DataFrame(candidate_data)
+        
+        # Filters
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            status_filter = st.selectbox(
+                "Status",
+                options=['All', 'New', 'Interested', 'Pass'],
+                index=0
+            )
+        
+        with col2:
+            min_score = st.slider("Min Score", 0, 100, 0)
+        
+        with col3:
+            search_term = st.text_input("Search", placeholder="Name or email...")
+        
+        # Apply filters
+        if status_filter != 'All':
+            df = df[df['Status'] == status_filter]
+        
+        df = df[df['Score'].astype(float) >= min_score]
+        
+        if search_term:
+            mask = (
+                df['Name'].str.contains(search_term, case=False, na=False) |
+                df['Email'].str.contains(search_term, case=False, na=False)
+            )
+            df = df[mask]
+        
+        # Display candidates
+        st.subheader(f"📋 Candidates ({len(df)})")
+        
+        # Create expandable rows for each candidate
+        for idx, row in df.iterrows():
+            with st.expander(f"{row['Name']} - Score: {row['Score']} - {row['Status']}"):
+                show_candidate_details(row['ID'])
                     
     except Exception as e:
         st.error(f"Error loading candidates: {str(e)}")
         logger.error(f"Candidate list error: {str(e)}")
 
 
-def show_candidate_details(candidate_id: int):
+def show_candidate_details(candidate_id: str):
     """Show detailed view of a candidate."""
     try:
-        with db.get_session() as session:
-            from src.models.database import Candidate
-            candidate = session.query(Candidate).filter_by(id=candidate_id).first()
+        # Load candidate from file storage
+        candidate = file_storage.load_candidate_metadata(candidate_id)
+        
+        if not candidate:
+            st.error("Candidate not found")
+            return
+        
+        # Convert to dict (no decryption needed)
+        candidate_dict = candidate.to_dict()
+        
+        # Basic info
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Contact Information**")
+            st.text(f"Name: {candidate.candidate_name or 'Unknown'}")
+            st.text(f"Email: {candidate.candidate_email or 'N/A'}")
+            st.text(f"Phone: {candidate.candidate_phone or 'N/A'}")
+        
+        with col2:
+            st.markdown("**Application Details**")
+            st.text(f"Received: {candidate.email_date.strftime('%Y-%m-%d %H:%M') if candidate.email_date else 'N/A'}")
+            st.text(f"From: {candidate.sender_email}")
+            st.text(f"Resume: {candidate.resume_filename}")
             
-            if not candidate:
-                st.error("Candidate not found")
-                return
+        # Score breakdown
+        if candidate.score_breakdown:
+            st.markdown("**Score Breakdown**")
+            breakdown = candidate.score_breakdown
             
-            decrypted = candidate.to_dict(db.cipher)
+            col1, col2, col3 = st.columns(3)
             
-            # Basic info
+            with col1:
+                skills = breakdown.get('skills', {})
+                st.metric("Skills", f"{skills.get('score', 0):.0f}")
+                if skills.get('matched_skills'):
+                    st.caption(f"Matched: {', '.join(skills['matched_skills'][:5])}")
+            
+            with col2:
+                education = breakdown.get('education', {})
+                st.metric("Education", f"{education.get('score', 0):.0f}")
+            
+            with col3:
+                experience = breakdown.get('experience', {})
+                st.metric("Experience", f"{experience.get('score', 0):.0f}")
+                st.caption(f"Years: {experience.get('total_years', 0):.1f}")
+            
+        # Comprehensive Report Section
+        st.markdown("**📊 Comprehensive Candidate Report**")
+        
+        # Check if comprehensive report data is available
+        has_comprehensive_data = any([
+            candidate.executive_summary,
+            candidate.experience_highlights,
+            candidate.education_highlights,
+            candidate.interesting_facts
+        ])
+        
+        if not has_comprehensive_data:
+            st.info("💡 Comprehensive report not available. This candidate may have been processed before the enhanced analysis was implemented. Try re-syncing to generate a comprehensive report.")
+        else:
+            # Display executive summary if available
+            if candidate.executive_summary:
+                st.markdown("**Executive Summary**")
+                st.info(candidate.executive_summary)
+            
+            # Display report sections in columns
             col1, col2 = st.columns(2)
             
             with col1:
-                st.markdown("**Contact Information**")
-                st.text(f"Name: {decrypted.get('candidate_name', 'Unknown')}")
-                st.text(f"Email: {decrypted.get('candidate_email', 'N/A')}")
-                st.text(f"Phone: {decrypted.get('candidate_phone', 'N/A')}")
+                # Experience highlights
+                if candidate.experience_highlights:
+                    st.markdown("**🏢 Experience Highlights**")
+                    for highlight in candidate.experience_highlights:
+                        st.write(f"• {highlight}")
+                
+                # Key skills
+                if candidate.skills:
+                    st.markdown("**🛠️ Key Skills**")
+                    # Display skills as tags
+                    skills_text = " • ".join(candidate.skills[:10])  # Limit to first 10 skills
+                    st.write(skills_text)
+                    if len(candidate.skills) > 10:
+                        st.caption(f"... and {len(candidate.skills) - 10} more skills")
             
             with col2:
-                st.markdown("**Application Details**")
-                st.text(f"Received: {candidate.email_date.strftime('%Y-%m-%d %H:%M')}")
-                st.text(f"From: {candidate.sender_email}")
-                st.text(f"Resume: {candidate.resume_filename}")
-            
-            # Score breakdown
-            if candidate.score_breakdown:
-                st.markdown("**Score Breakdown**")
-                breakdown = decrypted.get('score_breakdown', {})
+                # Education highlights
+                if candidate.education_highlights:
+                    st.markdown("**🎓 Education Highlights**")
+                    for edu in candidate.education_highlights:
+                        st.write(f"• {edu}")
                 
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    skills = breakdown.get('skills', {})
-                    st.metric("Skills", f"{skills.get('score', 0)*100:.0f}%")
-                    if skills.get('matched_skills'):
-                        st.caption(f"Matched: {', '.join(skills['matched_skills'][:5])}")
-                
-                with col2:
-                    education = breakdown.get('education', {})
-                    st.metric("Education", f"{education.get('score', 0)*100:.0f}%")
-                
-                with col3:
-                    experience = breakdown.get('experience', {})
-                    st.metric("Experience", f"{experience.get('score', 0)*100:.0f}%")
-                    st.caption(f"Years: {experience.get('total_years', 0):.1f}")
+                # Interesting facts
+                if candidate.interesting_facts:
+                    st.markdown("**✨ Interesting Facts**")
+                    for fact in candidate.interesting_facts:
+                        st.write(f"• {fact}")
             
-            # Comprehensive Report Section
-            st.markdown("**📊 Comprehensive Candidate Report**")
-            
-            # Check if comprehensive report data is available
-            has_comprehensive_data = any([
-                decrypted.get('executive_summary'),
-                decrypted.get('experience_highlights'),
-                decrypted.get('education_highlights'),
-                decrypted.get('interesting_facts')
-            ])
-            
-            if not has_comprehensive_data:
-                st.info("💡 Comprehensive report not available. This candidate may have been processed before the enhanced analysis was implemented. Try re-syncing to generate a comprehensive report.")
+        # Actions
+        st.markdown("**Actions**")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            if st.button("✅ Interested", key=f"interested_{candidate_id}"):
+                update_candidate_status(candidate_id, 'interested')
+        
+        with col2:
+            if st.button("❌ Pass", key=f"pass_{candidate_id}"):
+                update_candidate_status(candidate_id, 'pass')
+        
+        with col3:
+            if st.button("↩️ Reset", key=f"reset_{candidate_id}"):
+                update_candidate_status(candidate_id, 'new')
+        
+        with col4:
+            # Download resume button
+            candidate_dir = file_storage.get_candidate_dir(candidate_id)
+            resume_path = candidate_dir / "attachments" / candidate.resume_filename
+            if resume_path.exists():
+                with open(resume_path, 'rb') as f:
+                    st.download_button(
+                        "📥 Resume",
+                        data=f.read(),
+                        file_name=candidate.resume_filename,
+                        mime="application/octet-stream",
+                        key=f"download_{candidate_id}"
+                    )
+        
+        with col5:
+            # Download comprehensive report button
+            if has_comprehensive_data:
+                if st.button("📋 Report", key=f"report_{candidate_id}"):
+                    generate_report_download(candidate_id, candidate_dict)
             else:
-                # Display executive summary if available
-                executive_summary = decrypted.get('executive_summary', '')
-                if executive_summary:
-                    st.markdown("**Executive Summary**")
-                    st.info(executive_summary)
-                
-                # Display report sections in columns
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    # Experience highlights
-                    experience_highlights = decrypted.get('experience_highlights', [])
-                    if experience_highlights:
-                        st.markdown("**🏢 Experience Highlights**")
-                        for highlight in experience_highlights:
-                            st.write(f"• {highlight}")
-                    
-                    # Key skills
-                    skills = decrypted.get('skills', [])
-                    if skills:
-                        st.markdown("**🛠️ Key Skills**")
-                        # Display skills as tags
-                        skills_text = " • ".join(skills[:10])  # Limit to first 10 skills
-                        st.write(skills_text)
-                        if len(skills) > 10:
-                            st.caption(f"... and {len(skills) - 10} more skills")
-                
-                with col2:
-                    # Education highlights
-                    education_highlights = decrypted.get('education_highlights', [])
-                    if education_highlights:
-                        st.markdown("**🎓 Education Highlights**")
-                        for edu in education_highlights:
-                            st.write(f"• {edu}")
-                    
-                    # Interesting facts
-                    interesting_facts = decrypted.get('interesting_facts', [])
-                    if interesting_facts:
-                        st.markdown("**✨ Interesting Facts**")
-                        for fact in interesting_facts:
-                            st.write(f"• {fact}")
+                st.button("📋 Report", disabled=True, key=f"report_disabled_{candidate_id}", help="Comprehensive report not available")
             
-            # Actions
-            st.markdown("**Actions**")
-            col1, col2, col3, col4, col5 = st.columns(5)
-            
-            with col1:
-                if st.button("✅ Interested", key=f"interested_{candidate_id}"):
-                    update_candidate_status(candidate_id, 'interested')
-            
-            with col2:
-                if st.button("❌ Pass", key=f"pass_{candidate_id}"):
-                    update_candidate_status(candidate_id, 'pass')
-            
-            with col3:
-                if st.button("↩️ Reset", key=f"reset_{candidate_id}"):
-                    update_candidate_status(candidate_id, 'new')
-            
-            with col4:
-                # Download resume button
-                cache_path = Path(CACHE_DIR) / candidate.email_id / candidate.resume_filename
-                if cache_path.exists():
-                    with open(cache_path, 'rb') as f:
-                        st.download_button(
-                            "📥 Resume",
-                            data=f.read(),
-                            file_name=candidate.resume_filename,
-                            mime="application/octet-stream",
-                            key=f"download_{candidate_id}"
-                        )
-            
-            with col5:
-                # Download comprehensive report button
-                if has_comprehensive_data:
-                    if st.button("📋 Report", key=f"report_{candidate_id}"):
-                        generate_report_download(candidate_id, decrypted)
-                else:
-                    st.button("📋 Report", disabled=True, key=f"report_disabled_{candidate_id}", help="Comprehensive report not available")
-            
-            # Notes
-            st.markdown("**Notes**")
-            current_notes = decrypted.get('notes', '')
-            new_notes = st.text_area(
-                "Add notes",
-                value=current_notes,
-                key=f"notes_{candidate_id}",
-                height=100
-            )
-            
-            if new_notes != current_notes:
-                if st.button("💾 Save Notes", key=f"save_notes_{candidate_id}"):
-                    save_candidate_notes(candidate_id, new_notes)
+        # Notes
+        st.markdown("**Notes**")
+        current_notes = candidate.notes or ''
+        new_notes = st.text_area(
+            "Add notes",
+            value=current_notes,
+            key=f"notes_{candidate_id}",
+            height=100
+        )
+        
+        if new_notes != current_notes:
+            if st.button("💾 Save Notes", key=f"save_notes_{candidate_id}"):
+                save_candidate_notes(candidate_id, new_notes)
                     
     except Exception as e:
         st.error(f"Error showing candidate details: {str(e)}")
         logger.error(f"Candidate details error: {str(e)}")
 
 
-def update_candidate_status(candidate_id: int, status: str):
+def update_candidate_status(candidate_id: str, status: str):
     """Update candidate status."""
     try:
-        with db.get_session() as session:
-            if db.update_candidate_status(session, candidate_id, status):
-                st.success(f"✅ Status updated to: {status}")
-                st.rerun()
-            else:
-                st.error("Failed to update status")
+        if file_storage.update_candidate_status(candidate_id, status):
+            st.success(f"✅ Status updated to: {status}")
+            st.rerun()
+        else:
+            st.error("Failed to update status")
     except Exception as e:
         st.error(f"Error updating status: {str(e)}")
 
 
-def save_candidate_notes(candidate_id: int, notes: str):
+def save_candidate_notes(candidate_id: str, notes: str):
     """Save candidate notes."""
     try:
-        with db.get_session() as session:
-            from src.models.database import Candidate
-            candidate = session.query(Candidate).filter_by(id=candidate_id).first()
-            if candidate:
-                candidate.notes = db.cipher.encrypt(notes) if notes else None
-                session.commit()
+        # Load current candidate to preserve status
+        candidate = file_storage.load_candidate_metadata(candidate_id)
+        if candidate:
+            current_status = candidate.status
+            if file_storage.update_candidate_status(candidate_id, current_status, notes):
                 st.success("✅ Notes saved")
                 st.rerun()
+            else:
+                st.error("Failed to save notes")
+        else:
+            st.error("Candidate not found")
     except Exception as e:
         st.error(f"Error saving notes: {str(e)}")
 
 
-def generate_report_download(candidate_id: int, decrypted_data: dict):
+def generate_report_download(candidate_id: str, candidate_data: dict):
     """Generate and download comprehensive candidate report."""
     try:
         # Get candidate info
-        candidate_name = decrypted_data.get('candidate_name', 'Unknown Candidate')
+        candidate_name = candidate_data.get('candidate_name', 'Unknown Candidate')
         
         # Generate comprehensive report content
         report_content = f"""
@@ -550,18 +546,18 @@ def generate_report_download(candidate_id: int, decrypted_data: dict):
 **Generated on:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 ## Candidate Information
-- **Name:** {decrypted_data.get('candidate_name', 'N/A')}
-- **Email:** {decrypted_data.get('candidate_email', 'N/A')}
-- **Phone:** {decrypted_data.get('candidate_phone', 'N/A')}
-- **Resume:** {decrypted_data.get('resume_filename', 'N/A')}
+- **Name:** {candidate_data.get('candidate_name', 'N/A')}
+- **Email:** {candidate_data.get('candidate_email', 'N/A')}
+- **Phone:** {candidate_data.get('candidate_phone', 'N/A')}
+- **Resume:** {candidate_data.get('resume_filename', 'N/A')}
 
 ## Executive Summary
-{decrypted_data.get('executive_summary', 'No executive summary available.')}
+{candidate_data.get('executive_summary', 'No executive summary available.')}
 
 ## Experience Highlights
 """
         
-        experience_highlights = decrypted_data.get('experience_highlights', [])
+        experience_highlights = candidate_data.get('experience_highlights', [])
         if experience_highlights:
             for i, highlight in enumerate(experience_highlights, 1):
                 report_content += f"{i}. {highlight}\n"
@@ -569,7 +565,7 @@ def generate_report_download(candidate_id: int, decrypted_data: dict):
             report_content += "No experience highlights available.\n"
         
         report_content += "\n## Education Highlights\n"
-        education_highlights = decrypted_data.get('education_highlights', [])
+        education_highlights = candidate_data.get('education_highlights', [])
         if education_highlights:
             for i, edu in enumerate(education_highlights, 1):
                 report_content += f"{i}. {edu}\n"
@@ -577,7 +573,7 @@ def generate_report_download(candidate_id: int, decrypted_data: dict):
             report_content += "No education highlights available.\n"
         
         report_content += "\n## Key Skills\n"
-        skills = decrypted_data.get('skills', [])
+        skills = candidate_data.get('skills', [])
         if skills:
             # Group skills in rows of 5
             for i in range(0, len(skills), 5):
@@ -587,7 +583,7 @@ def generate_report_download(candidate_id: int, decrypted_data: dict):
             report_content += "No skills identified.\n"
         
         report_content += "\n## Interesting Facts\n"
-        interesting_facts = decrypted_data.get('interesting_facts', [])
+        interesting_facts = candidate_data.get('interesting_facts', [])
         if interesting_facts:
             for i, fact in enumerate(interesting_facts, 1):
                 report_content += f"{i}. {fact}\n"
@@ -595,7 +591,7 @@ def generate_report_download(candidate_id: int, decrypted_data: dict):
             report_content += "No interesting facts available.\n"
         
         # Add scoring information
-        score_breakdown = decrypted_data.get('score_breakdown', {})
+        score_breakdown = candidate_data.get('score_breakdown', {})
         if score_breakdown:
             report_content += f"\n## Scoring Analysis\n"
             report_content += f"**Overall Score:** {score_breakdown.get('total_score', 0):.1f}/100\n\n"
@@ -621,7 +617,7 @@ def generate_report_download(candidate_id: int, decrypted_data: dict):
             report_content += f"- Total Years: {experience_score.get('total_years', 0):.1f}\n"
         
         # Add notes if available
-        notes = decrypted_data.get('notes', '')
+        notes = candidate_data.get('notes', '')
         if notes:
             report_content += f"\n## Notes\n{notes}\n"
         
@@ -646,44 +642,41 @@ def generate_report_download(candidate_id: int, decrypted_data: dict):
 def export_candidates():
     """Export candidates to CSV."""
     try:
-        with db.get_session() as session:
-            from src.models.database import Candidate
-            candidates = session.query(Candidate).all()
-            
-            if not candidates:
-                st.warning("No candidates to export")
-                return
-            
-            # Create export data
-            export_data = []
-            for candidate in candidates:
-                decrypted = candidate.to_dict(db.cipher)
-                export_data.append({
-                    'Name': decrypted.get('candidate_name', 'Unknown'),
-                    'Email': decrypted.get('candidate_email', ''),
-                    'Phone': decrypted.get('candidate_phone', ''),
-                    'Score': candidate.score,
-                    'Status': candidate.status,
-                    'Skills': ', '.join(decrypted.get('skills', [])),
-                    'Education': ', '.join([e.get('text', '') for e in decrypted.get('education', [])]),
-                    'Experience Years': sum(e.get('years', 0) for e in decrypted.get('experience', [])),
-                    'Resume': candidate.resume_filename,
-                    'Received Date': candidate.email_date.strftime('%Y-%m-%d'),
-                    'Notes': decrypted.get('notes', '')
-                })
-            
-            df = pd.DataFrame(export_data)
-            
-            # Generate CSV
-            csv = df.to_csv(index=False)
-            
-            # Download button
-            st.download_button(
-                label="📥 Download CSV",
-                data=csv,
-                file_name=f"candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
+        candidates = file_storage.list_all_candidates()
+        
+        if not candidates:
+            st.warning("No candidates to export")
+            return
+        
+        # Create export data
+        export_data = []
+        for candidate in candidates:
+            export_data.append({
+                'Name': candidate.candidate_name or 'Unknown',
+                'Email': candidate.candidate_email or '',
+                'Phone': candidate.candidate_phone or '',
+                'Score': candidate.score,
+                'Status': candidate.status,
+                'Skills': ', '.join(candidate.skills),
+                'Education': ', '.join(candidate.education_highlights),
+                'Experience Highlights': ', '.join(candidate.experience_highlights),
+                'Resume': candidate.resume_filename,
+                'Received Date': candidate.email_date.strftime('%Y-%m-%d') if candidate.email_date else '',
+                'Notes': candidate.notes or ''
+            })
+        
+        df = pd.DataFrame(export_data)
+        
+        # Generate CSV
+        csv = df.to_csv(index=False)
+        
+        # Download button
+        st.download_button(
+            label="📥 Download CSV",
+            data=csv,
+            file_name=f"candidates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
             
     except Exception as e:
         st.error(f"Export error: {str(e)}")
@@ -693,17 +686,21 @@ def export_candidates():
 def purge_data():
     """Purge all data from the system."""
     try:
-        if db.purge_all_data():
-            # Also clear cache directory
-            import shutil
-            if CACHE_DIR.exists():
-                shutil.rmtree(CACHE_DIR)
-                CACHE_DIR.mkdir(exist_ok=True)
-            
-            st.success("✅ All data has been purged")
-            st.rerun()
-        else:
-            st.error("Failed to purge data")
+        import shutil
+        from src.config import DATA_DIR
+        
+        # Remove all data directories
+        if DATA_DIR.exists():
+            shutil.rmtree(DATA_DIR)
+            DATA_DIR.mkdir(exist_ok=True)
+        
+        # Also clear cache directory if it exists
+        if CACHE_DIR.exists():
+            shutil.rmtree(CACHE_DIR)
+            CACHE_DIR.mkdir(exist_ok=True)
+        
+        st.success("✅ All data has been purged")
+        st.rerun()
     except Exception as e:
         st.error(f"Purge error: {str(e)}")
         logger.error(f"Purge error: {str(e)}")

@@ -6,8 +6,6 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
-from cryptography.fernet import Fernet
-import base64
 
 # Load environment variables
 load_dotenv()
@@ -16,11 +14,10 @@ load_dotenv()
 BASE_DIR = Path(__file__).parent.parent
 DATA_DIR = BASE_DIR / "data"
 CACHE_DIR = DATA_DIR / "cache"
-DB_DIR = DATA_DIR / "db"
 LOGS_DIR = BASE_DIR / "logs"
 
 # Ensure directories exist
-for dir_path in [DATA_DIR, CACHE_DIR, DB_DIR, LOGS_DIR]:
+for dir_path in [DATA_DIR, CACHE_DIR, LOGS_DIR]:
     dir_path.mkdir(parents=True, exist_ok=True)
 
 
@@ -62,7 +59,7 @@ class Config:
         
     def _validate_env_vars(self):
         """Validate required environment variables."""
-        required_vars = ['CLIENT_ID', 'TENANT_ID', 'AES_KEY']
+        required_vars = ['CLIENT_ID', 'TENANT_ID']
         missing_vars = [var for var in required_vars if not os.getenv(var)]
         
         if missing_vars:
@@ -78,16 +75,7 @@ class Config:
         """Get Microsoft Graph tenant ID."""
         return os.getenv('TENANT_ID', '')
     
-    @property
-    def aes_key(self) -> bytes:
-        """Get AES encryption key."""
-        key_str = os.getenv('AES_KEY', '')
-        try:
-            # Decode base64 key
-            return base64.b64decode(key_str)
-        except Exception:
-            # Generate a new key if invalid
-            return Fernet.generate_key()
+
     
     @property
     def debug_mode(self) -> bool:
