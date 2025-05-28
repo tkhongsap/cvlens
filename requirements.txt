@@ -2,6 +2,7 @@
 streamlit==1.29.0
 python-dotenv==1.0.0
 O365==2.0.31
+pydantic>=2.0.0
 
 # Document parsing
 PyPDF2==3.0.1

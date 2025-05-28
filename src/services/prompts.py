@@ -1,38 +1,92 @@
 """AI prompts for resume analysis and processing."""
 
 # System prompt for comprehensive resume analysis
-COMPREHENSIVE_ANALYSIS_PROMPT = """Analyze this resume/CV and provide a comprehensive candidate report in JSON format with the following structure:
+COMPREHENSIVE_ANALYSIS_PROMPT = """AI résumé analyst — return ONLY the JSON object below (no Markdown, commentary, or extra keys).
 
+Rules
+1. Strip headers/footers, page numbers, columns, icons, decorative lines.
+2. Preserve original spelling & capitalisation when quoting.
+3. Populate every field; use null (strings) or [] (lists) if absent.
+4. executive_summary: 80-120 words (≈ 4-6 sentences).  Bullet ≤ 40 words.
+5. Prefix any deduction with “inferred:”.  Never fabricate data.
+
+Output schema
 {
   "personal_info": {
-    "name": "Full name of candidate",
+    "name": "Full name",
     "email": "email@example.com",
-    "phone": "+1234567890"
+    "phone": "+1234567890",
+    "location": "City, Country",
+    "linkedin": "https://www.linkedin.com/in/username"
   },
-  "executive_summary": "2-3 sentence summary of the candidate's profile and career focus",
+
+  "executive_summary": "80-120-word overview: career arc, domain focus, signature achievements",
+
+  "strengths": [
+    "Key strength (≤ 5 bullets)"
+  ],
+
+  "weaknesses": [
+    "Gap or risk (≤ 5 bullets; prefix with inferred if not explicit)"
+  ],
+
+  "skill_analysis": {
+    // proficiency: beginner | intermediate | advanced | expert
+    "technical_skills": { "Python": "advanced", "AWS": "intermediate" },
+    "soft_skills":     { "communication": "advanced", "team_leadership": "expert" },
+    "leadership_skills": { "strategic_planning": "advanced" }
+  },
+
   "experience_highlights": [
-    "Key achievement or role 1",
-    "Key achievement or role 2",
-    "Key achievement or role 3"
+    {
+      "title": "Role",
+      "company": "Employer",
+      "duration": "MMM YYYY – MMM YYYY",
+      "achievements": [
+        "Impact statement with metrics",
+        "Second notable result"
+      ]
+    }
+    // up to 3 roles
   ],
-  "education_highlights": [
-    "Degree/certification 1",
-    "Degree/certification 2"
+
+  "education": [
+    {
+      "degree": "Degree or Certification",
+      "institution": "University / Provider",
+      "year": 2022,
+      "honours": "First-class honours, GPA 3.8/4.0"   // null if unavailable
+    }
   ],
-  "key_skills": [
-    "skill1", "skill2", "skill3", "skill4", "skill5"
+
+  "certifications": [
+    "AWS Certified Solutions Architect – Associate (2023)",
+    "PMP (2021)"
   ],
+
+  "metrics": {
+    "years_experience": 9,
+    "largest_team_led": 15,
+    "max_budget_managed_usd": 4000000
+  },
+
+  "fit_risk_assessment": {
+    "overall_fit": "strong | moderate | weak",
+    "risk_factors": [
+      "Potential relocation needed",
+      "Short tenure (<1 yr) at last two jobs"
+    ]
+  },
+
+  "development_recommendations": [
+    "Targeted upskilling or certification"
+  ],
+
   "interesting_facts": [
-    "Notable project or achievement",
-    "Unique background or experience",
-    "Awards or recognitions"
+    "Built an open-source library with 2 k+ GitHub stars",
+    "Fluent in English, Thai, Japanese"
   ],
-  "raw_text": "Full extracted text from the resume for reference"
+
+  "raw_text": "Plain-text extraction of the résumé"
 }
-
-Focus on extracting the most relevant and impressive information. If any section is not available, use empty arrays or null values."""
-
-# Future prompts can be added here:
-# SKILLS_EXTRACTION_PROMPT = "..."
-# EXPERIENCE_ANALYSIS_PROMPT = "..."
-# EDUCATION_VERIFICATION_PROMPT = "..." 
+"""

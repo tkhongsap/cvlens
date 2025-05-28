@@ -80,12 +80,7 @@ class EmailIngestor:
             
             for message in messages:
                 try:
-                    # Check if already processed
-                    if file_storage.load_candidate_metadata(message.object_id):
-                        logger.debug(f"Message already processed: {message.object_id}")
-                        continue
-                    
-                    # Process message
+                    # Process message (removed duplicate check to force reprocessing)
                     if self._process_message(message):
                         processed_count += 1
                     else:
@@ -144,74 +139,114 @@ class EmailIngestor:
                 )
                 return False
             
-            # Process each attachment
+            # Save all valid attachments first
+            saved_attachments = []
             for attachment in resume_attachments:
                 try:
-                    # Save attachment to cache
                     file_path = self._save_attachment(attachment, message.object_id)
-                    
-                    # Calculate hash
                     file_hash = self._calculate_file_hash(file_path)
                     
-                    # Check for duplicate by hash across all candidates
-                    all_candidates = file_storage.list_all_candidates()
-                    duplicate_found = any(c.resume_hash == file_hash for c in all_candidates)
-                    
-                    if duplicate_found:
-                        logger.info(f"Duplicate resume found: {attachment.name}")
-                        file_storage.log_processing(
-                            message.object_id,
-                            'fetch',
-                            'skipped',
-                            f'Duplicate resume: {attachment.name}'
-                        )
-                        continue
-                    
-                    # Extract email content
-                    email_content = self._extract_email_content(message)
-                    
-                    # Create candidate record
-                    candidate = CandidateData(
-                        email_id=message.object_id,
-                        email_date=message.received,
-                        sender_email=message.sender.address if message.sender else "",
-                        sender_name=message.sender.name if message.sender else "",
-                        subject=message.subject or "",
-                        resume_filename=attachment.name,
-                        resume_hash=file_hash,
-                        resume_size_bytes=attachment.size
-                    )
-                    
-                    # Save candidate metadata
-                    if file_storage.save_candidate_metadata(candidate):
-                        file_storage.log_processing(
-                            message.object_id,
-                            'fetch',
-                            'success',
-                            f'Processed: {attachment.name}'
-                        )
-                    else:
-                        file_storage.log_processing(
-                            message.object_id,
-                            'fetch',
-                            'failed',
-                            f'Failed to save metadata for: {attachment.name}'
-                        )
-                    
+                    # Save all valid attachments (removed duplicate check for now)
+                    saved_attachments.append({
+                        'name': attachment.name,
+                        'path': file_path,
+                        'hash': file_hash,
+                        'size': attachment.size
+                    })
+                
                 except Exception as e:
                     logger.error(f"Error processing attachment {attachment.name}: {str(e)}")
-                    file_storage.log_processing(
-                        message.object_id,
-                        'fetch',
-                        'failed',
-                        f'Attachment error: {str(e)}'
-                    )
             
-            return True
+            if not saved_attachments:
+                logger.info(f"No new attachments to process for message: {message.object_id}")
+                file_storage.log_processing(
+                    message.object_id,
+                    'fetch',
+                    'skipped',
+                    'All attachments were duplicates'
+                )
+                return False
+            
+            # Select the best resume file (prioritize by name patterns and size)
+            best_attachment = self._select_best_resume(saved_attachments)
+            
+            # Extract email content
+            email_content = self._extract_email_content(message)
+            
+            # Create single candidate record with the best resume
+            candidate = CandidateData(
+                email_id=message.object_id,
+                email_date=message.received,
+                sender_email=message.sender.address if message.sender else "",
+                sender_name=message.sender.name if message.sender else "",
+                subject=message.subject or "",
+                resume_filename=best_attachment['name'],
+                resume_hash=best_attachment['hash'],
+                resume_size_bytes=best_attachment['size']
+            )
+            
+            # Save candidate metadata
+            if file_storage.save_candidate_metadata(candidate):
+                attachment_names = [att['name'] for att in saved_attachments]
+                file_storage.log_processing(
+                    message.object_id,
+                    'fetch',
+                    'success',
+                    f'Processed {len(saved_attachments)} attachments: {", ".join(attachment_names)}. Primary: {best_attachment["name"]}'
+                )
+                return True
+            else:
+                file_storage.log_processing(
+                    message.object_id,
+                    'fetch',
+                    'failed',
+                    f'Failed to save metadata for: {best_attachment["name"]}'
+                )
+                return False
             
         except Exception as e:
             logger.error(f"Error processing message: {str(e)}")
             return False
+    
+    def _select_best_resume(self, attachments: List[Dict]) -> Dict:
+        """Select the best resume file from multiple attachments."""
+        if len(attachments) == 1:
+            return attachments[0]
+        
+        # Score each attachment
+        scored_attachments = []
+        for att in attachments:
+            score = 0
+            filename_lower = att['name'].lower()
+            
+            # Prefer files with "resume" or "cv" in name
+            if 'resume' in filename_lower:
+                score += 10
+            elif 'cv' in filename_lower:
+                score += 8
+            elif any(word in filename_lower for word in ['curriculum', 'vitae']):
+                score += 6
+            
+            # Prefer larger files (more content)
+            if att['size'] > 200000:  # > 200KB
+                score += 5
+            elif att['size'] > 100000:  # > 100KB
+                score += 3
+            elif att['size'] > 50000:   # > 50KB
+                score += 1
+            
+            # Prefer PDF over other formats
+            if att['name'].lower().endswith('.pdf'):
+                score += 2
+            
+            scored_attachments.append((score, att))
+        
+        # Return the highest scored attachment
+        scored_attachments.sort(key=lambda x: x[0], reverse=True)
+        best_attachment = scored_attachments[0][1]
+        
+        logger.info(f"Selected best resume: {best_attachment['name']} from {len(attachments)} attachments")
+        return best_attachment
     
     def _is_valid_attachment(self, attachment) -> bool:
         """Check if attachment is a valid resume file."""
@@ -226,6 +261,33 @@ class EmailIngestor:
             logger.debug(f"Unsupported file type: {attachment.name}")
             return False
         
+        # Check filename patterns to exclude non-resume documents
+        filename_lower = attachment.name.lower()
+        
+        # Exclude common non-resume document patterns (more comprehensive)
+        exclude_patterns = [
+            'nda', 'non-disclosure', 'agreement', 'contract', 'form', 'application',
+            'consent', 'template', 'policy', 'terms', 'conditions', 'waiver',
+            'release', 'authorization', 'permission', 'disclaimer', 'tcctech',
+            'pdpa', 'revision', 'transcript', 'certificate', 'diploma'
+        ]
+        
+        for pattern in exclude_patterns:
+            if pattern in filename_lower:
+                logger.info(f"Excluding non-resume document: {attachment.name} (contains '{pattern}')")
+                return False
+        
+        # Prefer files with resume-like names
+        resume_patterns = ['resume', 'cv', 'curriculum', 'vitae', 'profile', 'bio']
+        has_resume_pattern = any(pattern in filename_lower for pattern in resume_patterns)
+        
+        # If it's a small file (< 50KB) and doesn't have resume patterns, it's likely not a resume
+        if attachment.size < 50000 and not has_resume_pattern:
+            logger.info(f"Excluding small non-resume file: {attachment.name} ({attachment.size} bytes)")
+            return False
+        
+        # Log what we're accepting
+        logger.info(f"Accepting potential resume file: {attachment.name} ({attachment.size} bytes)")
         return True
     
     def _save_attachment(self, attachment, email_id: str) -> Path:
