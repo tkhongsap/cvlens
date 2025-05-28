@@ -53,7 +53,7 @@ Based on the test results, you need to address these issues:
 ### 1. **Update .env File** (Critical)
 Your `.env` file needs the correct AES key. Update it with:
 ```
-AES_KEY=anZ3ZGtDSW9TR29uVFpZUDZEdElKdGs1S1VVUEF3MXhYc0JGdFpXeFQ0RT0=
+AES_KEY=<your-generated-aes-key-here>
 ```
 
 ### 2. **Set Your Azure Tenant ID** (Critical)
