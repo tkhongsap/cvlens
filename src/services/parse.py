@@ -171,7 +171,8 @@ class ResumeParser:
             )
             
             # Get the response text
-            summary_text = response.output[0].content[0].text
+            summary_text = response.output_text
+            print(summary_text)
             
             # Print to terminal
             print("\n" + "="*80)
